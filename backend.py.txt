@@ -1,0 +1,31 @@
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# Liste temporaire des alertes (stockage mémoire pour le moment)
+alertes = []
+
+@app.route('/')
+def home():
+    return "Serveur d'Alerte de Prix - En ligne ✅"
+
+@app.route('/ajouter_alerte', methods=['POST'])
+def ajouter_alerte():
+    data = request.json
+    lien = data.get('lien')
+    prix = data.get('prix')
+
+    if not lien or not prix:
+        return jsonify({'message': 'Données manquantes'}), 400
+
+    alerte = {'lien': lien, 'prix': prix}
+    alertes.append(alerte)
+
+    return jsonify({'message': 'Alerte ajoutée avec succès', 'alerte': alerte}), 201
+
+@app.route('/alertes', methods=['GET'])
+def lister_alertes():
+    return jsonify(alertes)
+
+if __name__ == '__main__':
+    app.run(debug=True)

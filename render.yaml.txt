@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: alerte-prix-backend
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: "python backend.py"
