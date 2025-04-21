@@ -1,33 +1,31 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import json
 import os
 import requests
 from bs4 import BeautifulSoup
 import re
 import schedule
-import time
 import threading
+import time
 import smtplib
 from email.message import EmailMessage
 
 app = Flask(__name__)
-CORS(app)  # 🔓 Autorise les requêtes depuis Flutter Web
-
 FICHIER_ALERTES = "alertes.json"
 
-# Charger les alertes existantes
+# Charger les alertes
 def charger_alertes():
     if os.path.exists(FICHIER_ALERTES):
         with open(FICHIER_ALERTES, "r", encoding="utf-8") as f:
             return json.load(f)
     return []
 
-# Sauvegarder les alertes dans le fichier
+# Sauvegarder les alertes
 def sauvegarder_alertes():
     with open(FICHIER_ALERTES, "w", encoding="utf-8") as f:
         json.dump(alertes, f, indent=2, ensure_ascii=False)
 
+# Initialiser les alertes
 alertes = charger_alertes()
 
 @app.route('/')
@@ -46,17 +44,16 @@ def ajouter_alerte():
     alerte = {'lien': lien, 'prix': prix}
     alertes.append(alerte)
     sauvegarder_alertes()
-    return jsonify({'message': 'Alerte ajoutée avec succès', 'alerte': alerte}), 201
+    return jsonify({'message': 'Alerte ajoutée', 'alerte': alerte}), 201
 
 @app.route('/alertes', methods=['GET'])
 def lister_alertes():
     return jsonify(alertes)
 
-# Scraper le prix actuel
 def obtenir_prix_actuel(lien):
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "User-Agent": "Mozilla/5.0"
         }
         response = requests.get(lien, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -84,11 +81,10 @@ def verifier_alertes():
             })
     return jsonify(alertes_trouvees)
 
-# 💌 Envoi d’e-mail
+# Envoi email (désactivé ici par défaut)
 def envoyer_email(destinataire, sujet, message):
-    EMAIL = "dan.berekia@gmail.com"
-    MOT_DE_PASSE = "fwtssbyckzziubvq"  # mot de passe d'application
-
+    EMAIL = "ton_email@gmail.com"
+    MDP = "mot_de_passe_application"
     try:
         msg = EmailMessage()
         msg.set_content(message)
@@ -97,14 +93,13 @@ def envoyer_email(destinataire, sujet, message):
         msg['To'] = destinataire
 
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(EMAIL, MOT_DE_PASSE)
+            smtp.login(EMAIL, MDP)
             smtp.send_message(msg)
 
-        print("✅ Email envoyé avec succès !")
+        print("✅ Email envoyé !")
     except Exception as e:
-        print(f"❌ Erreur en envoyant l'email : {e}")
+        print(f"❌ Erreur email : {e}")
 
-# Vérification automatique
 def verification_automatique():
     print("🕒 Vérification automatique...")
     with app.app_context():
@@ -113,27 +108,23 @@ def verification_automatique():
     if resultats:
         print("⚠️ Alertes déclenchées :")
         for a in resultats:
-            print(f" - {a['lien']} ➝ {a['prix_actuel']} € ≤ {a['prix_cible']} €")
-            envoyer_email(
-                destinataire="dan.berekia@gmail.com",
-                sujet="🔔 Alerte de prix atteinte !",
-                message=f"Produit : {a['lien']}\nPrix actuel : {a['prix_actuel']} €\nPrix cible : {a['prix_cible']} €"
-            )
+            print(f"- {a['lien']} ➝ {a['prix_actuel']} € ≤ {a['prix_cible']} €")
+            # envoyer_email(...)  # à activer si besoin
     else:
-        print("✅ Aucune alerte à déclencher.")
+        print("✅ Aucune alerte déclenchée.")
 
-# Scheduler
 def lancer_scheduler():
-    schedule.every(1).minutes.do(verification_automatique)
+    schedule.every(10).minutes.do(verification_automatique)
     while True:
         schedule.run_pending()
         time.sleep(60)
 
-# ▶️ Démarrage
+# Lancer le scheduler en arrière-plan
+t = threading.Thread(target=lancer_scheduler)
+t.daemon = True
+t.start()
+
+# ✅ Lancement pour Render avec port dynamique
 if __name__ == '__main__':
-    t = threading.Thread(target=lancer_scheduler)
-    t.daemon = True
-    t.start()
-    import os
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    port = int(os.environ.get('PORT', 5000))  # Render définit PORT=10000
+    app.run(host='0.0.0.0', port=port)
