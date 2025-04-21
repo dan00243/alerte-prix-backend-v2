@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import json
 import os
 import requests
@@ -11,6 +12,8 @@ import smtplib
 from email.message import EmailMessage
 
 app = Flask(__name__)
+CORS(app)  # 🔓 Autorise les requêtes depuis Flutter Web
+
 FICHIER_ALERTES = "alertes.json"
 
 # Charger les alertes existantes
@@ -25,7 +28,6 @@ def sauvegarder_alertes():
     with open(FICHIER_ALERTES, "w", encoding="utf-8") as f:
         json.dump(alertes, f, indent=2, ensure_ascii=False)
 
-# Données chargées au démarrage
 alertes = charger_alertes()
 
 @app.route('/')
@@ -82,10 +84,10 @@ def verifier_alertes():
             })
     return jsonify(alertes_trouvees)
 
-# 💌 Fonction d’envoi d’email via Gmail
+# 💌 Envoi d’e-mail
 def envoyer_email(destinataire, sujet, message):
     EMAIL = "dan.berekia@gmail.com"
-    MOT_DE_PASSE = "fwtssbyckzziubvq"  # ton mot de passe d'application (corrigé sans espace)
+    MOT_DE_PASSE = "fwtssbyckzziubvq"  # mot de passe d'application
 
     try:
         msg = EmailMessage()
@@ -99,11 +101,10 @@ def envoyer_email(destinataire, sujet, message):
             smtp.send_message(msg)
 
         print("✅ Email envoyé avec succès !")
-
     except Exception as e:
         print(f"❌ Erreur en envoyant l'email : {e}")
 
-# 🔁 Vérification automatique
+# Vérification automatique
 def verification_automatique():
     print("🕒 Vérification automatique...")
     with app.app_context():
@@ -121,7 +122,7 @@ def verification_automatique():
     else:
         print("✅ Aucune alerte à déclencher.")
 
-# 🔁 Scheduler toutes les minutes
+# Scheduler
 def lancer_scheduler():
     schedule.every(1).minutes.do(verification_automatique)
     while True:
@@ -133,6 +134,6 @@ if __name__ == '__main__':
     t = threading.Thread(target=lancer_scheduler)
     t.daemon = True
     t.start()
-import os
-app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
-
+    import os
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port, debug=True)
