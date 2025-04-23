@@ -1,54 +1,58 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import json
 import os
 import requests
 from bs4 import BeautifulSoup
 import re
 import schedule
-import threading
 import time
+import threading
 import smtplib
 from email.message import EmailMessage
 
 app = Flask(__name__)
-FICHIER_ALERTES = "alertes.json"
+CORS(app)  # ✅ Pour autoriser les requêtes depuis Flutter Web
 
-# Charger les alertes
+FICHIER_ALERTES = "alertes.json"
+EMAIL = "dan.berekia@gmail.com"
+MOT_DE_PASSE = "fwtssbyckzziubvq"  # ❗ Ton mot de passe d'application Gmail
+
+# Charger les alertes existantes
 def charger_alertes():
     if os.path.exists(FICHIER_ALERTES):
         with open(FICHIER_ALERTES, "r", encoding="utf-8") as f:
             return json.load(f)
     return []
 
-# Sauvegarder les alertes
+# Sauvegarder les alertes dans le fichier
 def sauvegarder_alertes():
     with open(FICHIER_ALERTES, "w", encoding="utf-8") as f:
         json.dump(alertes, f, indent=2, ensure_ascii=False)
 
-# Initialiser les alertes
+# ✅ Initialisation
 alertes = charger_alertes()
 
 @app.route('/')
-def home():
-    return "Serveur d'Alerte de Prix - En ligne ✅"
+def accueil():
+    return "🚀 Serveur Alerte de Prix en ligne !"
 
 @app.route('/ajouter_alerte', methods=['POST'])
 def ajouter_alerte():
     data = request.json
     lien = data.get('lien')
     prix = data.get('prix')
-
     if not lien or prix is None:
-        return jsonify({'message': 'Données manquantes'}), 400
+        return jsonify({'message': '❌ Données manquantes'}), 400
 
     alerte = {'lien': lien, 'prix': prix}
     alertes.append(alerte)
     sauvegarder_alertes()
-    return jsonify({'message': 'Alerte ajoutée', 'alerte': alerte}), 201
+    return jsonify({'message': '✅ Alerte ajoutée avec succès', 'alerte': alerte}), 201
 
 @app.route('/alertes', methods=['GET'])
-def lister_alertes():
-    return jsonify(alertes)
+def voir_alertes():
+    return jsonify(alertes), 200
 
 def obtenir_prix_actuel(lien):
     try:
@@ -60,11 +64,40 @@ def obtenir_prix_actuel(lien):
         texte = soup.get_text()
         prix_match = re.search(r"(\d{1,5}[.,]\d{2})", texte)
         if prix_match:
-            return float(prix_match.group(1).replace(',', '.'))
+            return float(prix_match.group(1).replace(",", "."))
         return None
     except Exception as e:
-        print(f"Erreur scraping : {e}")
+        print(f"❌ Erreur scraping : {e}")
         return None
+
+def envoyer_email(destinataire, lien, prix_actuel, prix_cible):
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = "🔔 Alerte de prix atteinte !"
+        msg['From'] = EMAIL
+        msg['To'] = destinataire
+
+        contenu_html = f"""
+        <html>
+            <body style="font-family: Arial; line-height: 1.6;">
+                <h2 style="color: #2e6c80;">🔔 Alerte de prix atteinte !</h2>
+                <p><strong>Produit :</strong> <a href="{lien}" target="_blank">{lien}</a></p>
+                <p><strong>Prix actuel :</strong> <span style="color:green;">{prix_actuel} €</span></p>
+                <p><strong>Prix souhaité :</strong> <span style="color:red;">{prix_cible} €</span></p>
+                <p>🎯 C'est le moment d'acheter !</p>
+            </body>
+        </html>
+        """
+        msg.set_content("Votre alerte a été déclenchée.")
+        msg.add_alternative(contenu_html, subtype='html')
+
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(EMAIL, MOT_DE_PASSE)
+            smtp.send_message(msg)
+
+        print("✅ Email HTML envoyé !")
+    except Exception as e:
+        print(f"❌ Erreur en envoyant l'email : {e}")
 
 @app.route('/verifier', methods=['GET'])
 def verifier_alertes():
@@ -79,52 +112,24 @@ def verifier_alertes():
                 'prix_actuel': prix_actuel,
                 'prix_cible': prix_cible
             })
-    return jsonify(alertes_trouvees)
+            envoyer_email(
+                destinataire=EMAIL,
+                lien=lien,
+                prix_actuel=prix_actuel,
+                prix_cible=prix_cible
+            )
+    return jsonify(alertes_trouvees), 200
 
-# Envoi email (désactivé ici par défaut)
-def envoyer_email(destinataire, sujet, message):
-    EMAIL = "ton_email@gmail.com"
-    MDP = "mot_de_passe_application"
-    try:
-        msg = EmailMessage()
-        msg.set_content(message)
-        msg['Subject'] = sujet
-        msg['From'] = EMAIL
-        msg['To'] = destinataire
-
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(EMAIL, MDP)
-            smtp.send_message(msg)
-
-        print("✅ Email envoyé !")
-    except Exception as e:
-        print(f"❌ Erreur email : {e}")
-
-def verification_automatique():
-    print("🕒 Vérification automatique...")
-    with app.app_context():
-        resultats = verifier_alertes().get_json()
-
-    if resultats:
-        print("⚠️ Alertes déclenchées :")
-        for a in resultats:
-            print(f"- {a['lien']} ➝ {a['prix_actuel']} € ≤ {a['prix_cible']} €")
-            # envoyer_email(...)  # à activer si besoin
-    else:
-        print("✅ Aucune alerte déclenchée.")
-
+# 🔁 Scheduler toutes les minutes
 def lancer_scheduler():
-    schedule.every(10).minutes.do(verification_automatique)
+    schedule.every(1).minutes.do(lambda: verifier_alertes())
     while True:
         schedule.run_pending()
         time.sleep(60)
 
-# Lancer le scheduler en arrière-plan
-t = threading.Thread(target=lancer_scheduler)
-t.daemon = True
-t.start()
-
-# ✅ Lancement pour Render avec port dynamique
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))  # Render définit PORT=10000
+    t = threading.Thread(target=lancer_scheduler)
+    t.daemon = True
+    t.start()
+    port = int(os.environ.get('PORT', 5000))  # ✅ Port dynamique pour Render
     app.run(host='0.0.0.0', port=port)
